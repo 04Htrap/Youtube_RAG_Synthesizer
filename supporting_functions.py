@@ -196,38 +196,48 @@ def create_vector_store(docs):
 
 # RAG function
 def rag_answer(question, vectorstore):
-    results = vectorstore.similarity_search(question, k = 4) # will convert question to embeddings and then retrieve top 4 similar chunks from vector store
-    context_text = "\n".join([i.page_content for i in results]) # combine the 4 chunks' important content (excluding meta data) to create one long paragraph to give it to llm
+    results = vectorstore.similarity_search(question, k=4)
 
-    prompt = ChatPromptTemplate.from_template("""
-                You are a kind, and precise assistant.
-                - Begin with a warm and respectful greeting (avoid repeating greetings every turn)
-                - Understand the user's intent even with typos or grammatical mistakes.
-                - Try Answering ONLY using the retrieved context.
-                - If answer not in context, try answering related and relevant stuff from your knowledge and also tell the user before answering-
-                  "Couldn't find the exact answer from video. But here's a relevant answer -"
-                - Keep answers clear, concise, and friendly.
-                
-                Context:
-                {context}
-                
-                Question;  
-                {question}
-                
-                Answer:
-                """)
-
-    # chain
-    chain = prompt | llm
-    response = chain.invoke({"context": context_text, "question":question})
-
-    if isinstance(response.content, list):
-    return "\n".join(
-        block.get("text", "")
-        for block in response.content
-        if isinstance(block, dict) and block.get("type") == "text"
+    context_text = "\n".join(
+        [i.page_content for i in results]
     )
 
+    prompt = ChatPromptTemplate.from_template("""
+        You are a kind, and precise assistant.
+
+        - Begin with a warm and respectful greeting (avoid repeating greetings every turn).
+        - Understand the user's intent even with typos or grammatical mistakes.
+        - Try answering ONLY using the retrieved context.
+        - If the answer is not in context, try answering related and relevant information
+          from your knowledge and tell the user before answering:
+          "Couldn't find the exact answer from video. But here's a relevant answer -"
+        - Keep answers clear, concise, and friendly.
+
+        Context:
+        {context}
+
+        Question:
+        {question}
+
+        Answer:
+    """)
+
+    chain = prompt | llm
+
+    response = chain.invoke({
+        "context": context_text,
+        "question": question
+    })
+
+    # Gemini may return structured content blocks
+    if isinstance(response.content, list):
+        return "\n".join(
+            block.get("text", "")
+            for block in response.content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+
+    # Older/simple response format
     return response.content
 
 
