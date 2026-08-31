@@ -1,5 +1,8 @@
 An app that requires a youtube url to generate notes/summary and a chatbot to discuss any doubts regarding the video.
 
+
+**Streamlit Link:** [https://parth-rag-yt.streamlit.app/](https://parth-rag-yt.streamlit.app/)
+
 # 🎥 YouTube RAG Synthesizer
 
 An AI-powered Streamlit application that transforms any YouTube video into **concise notes** or an **interactive chatbot** experience using Retrieval-Augmented Generation (RAG) with Gemini LLM.
