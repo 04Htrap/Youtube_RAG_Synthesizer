@@ -221,6 +221,13 @@ def rag_answer(question, vectorstore):
     chain = prompt | llm
     response = chain.invoke({"context": context_text, "question":question})
 
+    if isinstance(response.content, list):
+    return "\n".join(
+        block.get("text", "")
+        for block in response.content
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
+
     return response.content
 
 
