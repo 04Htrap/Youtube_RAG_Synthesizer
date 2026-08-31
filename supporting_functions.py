@@ -90,7 +90,7 @@ def get_transcript(video_id, language="en"):
 # function to translate the transcript to english
     # initialize the genai model
 llm = ChatGoogleGenerativeAI(
-    model = "gemini-2.5-flash-lite",
+    model = "gemini-3.5-flash-lite",
     temperature = 0.2
 )
 
