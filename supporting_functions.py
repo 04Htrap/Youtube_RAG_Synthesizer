@@ -10,7 +10,6 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 import time
 
-
 import yt_dlp
 import requests
 import os
@@ -29,6 +28,7 @@ def extract_video_id(url):
         return match.group(1)
     st.error("Invalid YouTube URL. Please enter a valid video link.")
     return None
+
 
 # function to get transcript of the video
 def get_transcript(video_id, language="en"):
@@ -57,8 +57,12 @@ def get_transcript(video_id, language="en"):
             "outtmpl": os.path.join("transcripts", f"{video_id}"),
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # use WITH so the connection is closed properly once the task is finished
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(
+                f"https://www.youtube.com/watch?v={video_id}",
+                download=False
+            )
+
             subs = info.get("subtitles") or info.get("automatic_captions")
 
             if not subs or language not in subs:
@@ -72,8 +76,13 @@ def get_transcript(video_id, language="en"):
 
             # Parse transcript JSON
             data = json.loads(response.text)
+
             full_transcript = " ".join(
-                [seg["segs"][0]["utf8"] for seg in data["events"] if "segs" in seg]
+                [
+                    seg["segs"][0]["utf8"]
+                    for seg in data["events"]
+                    if "segs" in seg
+                ]
             )
 
             # Cache transcript
@@ -87,13 +96,21 @@ def get_transcript(video_id, language="en"):
         return None
 
 
-# function to translate the transcript to english
-    # initialize the genai model
+# Initialize the Gemini model
 llm = ChatGoogleGenerativeAI(
-    model = "gemini-3.5-flash-lite",
-    temperature = 0.2
+    model="gemini-3.5-flash-lite",
+    temperature=0.2
 )
 
+
+# NEW: Extract only the actual text from Gemini's response
+def get_text(response):
+    if isinstance(response.content, list):
+        return response.content[0]["text"]
+    return response.content
+
+
+# function to translate the transcript to english
 def translate_transcript(transcript):
     try:
         prompt = ChatPromptTemplate.from_template(f"""
@@ -115,7 +132,7 @@ def translate_transcript(transcript):
         # invoke chain
         response = chain.invoke({"transcript": transcript})
 
-        return response.content
+        return get_text(response)
 
     except Exception as e:
         st.error(f"Error fetching transcript {e}")
@@ -145,7 +162,7 @@ def get_important_topics(transcript):
         # invoke chain
         response = chain.invoke({"transcript": transcript})
 
-        return response.content
+        return get_text(response)
 
     except Exception as e:
         st.error(f"Error fetching transcript {e}")
@@ -175,53 +192,68 @@ def generate_notes(transcript):
         # invoke chain
         response = chain.invoke({"transcript": transcript})
 
-        return response.content
+        return get_text(response)
 
     except Exception as e:
         st.error(f"Error fetching transcript {e}")
 
 
-
 # Function to create chunks
 def create_chunks(transcript):
-    text_splitters = RecursiveCharacterTextSplitter(chunk_size = 10000, chunk_overlap = 1000)
+    text_splitters = RecursiveCharacterTextSplitter(
+        chunk_size=10000,
+        chunk_overlap=1000
+    )
+
     doc = text_splitters.create_documents([transcript])
     return doc
 
+
 # function to creating embeddings of chunks and store it into vector space
 def create_vector_store(docs):
-    embedding = HuggingFaceEmbeddings(model_name = "all-MiniLM-L6-v2")
-    vector_store = Chroma.from_documents(docs, embedding)
+    embedding = HuggingFaceEmbeddings(
+        model_name="all-MiniLM-L6-v2"
+    )
+
+    vector_store = Chroma.from_documents(
+        docs,
+        embedding
+    )
+
     return vector_store
+
 
 # RAG function
 def rag_answer(question, vectorstore):
-    results = vectorstore.similarity_search(question, k=4)
+
+    results = vectorstore.similarity_search(
+        question,
+        k=4
+    )
 
     context_text = "\n".join(
         [i.page_content for i in results]
     )
 
     prompt = ChatPromptTemplate.from_template("""
-        You are a kind, and precise assistant.
+                You are a kind, and precise assistant.
+                - Begin with a warm and respectful greeting (avoid repeating greetings every turn)
+                - Understand the user's intent even with typos or grammatical mistakes.
+                - Try Answering ONLY using the retrieved context.
+                - If answer not in context, try answering related and relevant stuff from your knowledge and also tell the user before answering-
+                  "Couldn't find the exact answer from video. But here's a relevant answer -"
+                - Keep answers clear, concise, and friendly.
+                
+                Context:
+                {context}
+                
+                Question;  
+                {question}
+                
+                Answer:
+                """)
 
-        - Begin with a warm and respectful greeting (avoid repeating greetings every turn).
-        - Understand the user's intent even with typos or grammatical mistakes.
-        - Try answering ONLY using the retrieved context.
-        - If the answer is not in context, try answering related and relevant information
-          from your knowledge and tell the user before answering:
-          "Couldn't find the exact answer from video. But here's a relevant answer -"
-        - Keep answers clear, concise, and friendly.
-
-        Context:
-        {context}
-
-        Question:
-        {question}
-
-        Answer:
-    """)
-
+    # chain
     chain = prompt | llm
 
     response = chain.invoke({
@@ -229,22 +261,4 @@ def rag_answer(question, vectorstore):
         "question": question
     })
 
-    # Gemini may return structured content blocks
-    if isinstance(response.content, list):
-        return "\n".join(
-            block.get("text", "")
-            for block in response.content
-            if isinstance(block, dict) and block.get("type") == "text"
-        )
-
-    # Older/simple response format
-    return response.content
-
-
-
-
-
-
-
-
-
+    return get_text(response)
